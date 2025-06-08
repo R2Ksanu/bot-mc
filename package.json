@@ -1,0 +1,20 @@
+{
+  "name": "discord-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.9.0",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.5.0",
+    "minecraft-server-util": "^5.4.4",
+    "node-fetch": "^2.7.0",
+    "required": "^1.0.0"
+  }
+}
