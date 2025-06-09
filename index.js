@@ -1,4 +1,3 @@
-require('dotenv').config();
 const {
   Client,
   GatewayIntentBits,
@@ -14,7 +13,7 @@ const {
 } = require('discord.js');
 const fetch = require('node-fetch');
 
-const TOKEN = process.env.BOT_TOKEN;
+const TOKEN = 'MTM2NTMxOTY4MzMzODgwMTE2Mg.G2wZ1N.YSj0x_JLlRVTIq6HDlHIlSUUXXV574FNw3KgtY';
 const GUILD_ID = '1287618065143562240';
 const DISCORD_INVITE = 'https://discord.gg/Y9p5W5Bx';
 const FIXED_IP = 'heartlessmc.playcraft.me';
