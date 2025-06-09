@@ -131,7 +131,7 @@ client.on(Events.InteractionCreate, async interaction => {
   const { commandName, options, guild } = interaction;
   const member = await guild.members.fetch(interaction.user.id);
   const perms = commandPermissions.get(guild.id);
-  const allowedRoles = perms?.[commandName];
+  const allowedRoles = perms && perms[commandName];
 
   if (allowedRoles && !member.roles.cache.some(r => allowedRoles.includes(r.id))) {
     return interaction.reply({ content: '⛔ No permission for this command.', ephemeral: true });
