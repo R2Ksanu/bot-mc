@@ -9,7 +9,7 @@ const {
 const fetch = require('node-fetch');
 
 const TOKEN = process.env.BOT_TOKEN;
-const GUILD_ID = '1287618065143562240';
+const GUILD_ID = '1365314109054255124';
 const DISCORD_INVITE = 'https://discord.gg/Y9p5W5Bx';
 const FIXED_IP = 'heartlessmc.playcraft.me';
 const VPS_IP = 'YOUR_VPS_PUBLIC_IP'; // Replace with your VPS IP or hostname
