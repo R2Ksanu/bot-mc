@@ -1,3 +1,4 @@
+// dotenv for secrets
 require('dotenv').config();
 const sqlite3 = require('sqlite3').verbose();
 const ping = require('ping');
@@ -12,7 +13,7 @@ const TOKEN = process.env.BOT_TOKEN;
 const GUILD_ID = '1365314109054255124';
 const DISCORD_INVITE = 'https://discord.gg/Y9p5W5Bx';
 const FIXED_IP = 'heartlessmc.playcraft.me';
-const VPS_IP = 'YOUR_VPS_PUBLIC_IP'; // Replace with your VPS IP or hostname
+const VPS_IP = '8.8.8.8';
 
 if (!TOKEN) {
     console.error("❌ BOT_TOKEN not found in .env file");
@@ -52,20 +53,22 @@ client.once(Events.ClientReady, async () => {
                 .addChoices({ name: 'maintenance', value: 'maintenance' }, { name: 'server_stop', value: 'server_stop' }))
             .addStringOption(opt => opt.setName('time').setDescription('Estimated time').setRequired(true)),
         new SlashCommandBuilder()
-            .setName('perm').setDescription('Allow/Deny role to use command')
-            .addRoleOption(opt => opt.setName('role').setDescription('Role').setRequired(true))
+            .setName('perm').setDescription('Allow/Deny role or reset permissions')
+            .addRoleOption(opt => opt.setName('role').setDescription('Role'))
             .addStringOption(opt => opt.setName('permission').setDescription('Command')
                 .addChoices(
                     { name: 'setup', value: 'setup' }, { name: 'stop', value: 'stop' },
                     { name: 'start', value: 'start' }, { name: 'msg', value: 'msg' },
                     { name: 'del', value: 'del' }, { name: 'perm', value: 'perm' },
                     { name: 'perm_list', value: 'perm_list' }, { name: 'ping', value: 'ping' }
-                ).setRequired(true))
+                ))
             .addStringOption(opt => opt.setName('toggle').setDescription('Allow or deny')
-                .addChoices({ name: 'allow', value: 'allow' }, { name: 'deny', value: 'deny' }).setRequired(true)),
+                .addChoices({ name: 'allow', value: 'allow' }, { name: 'deny', value: 'deny' }))
+            .addBooleanOption(opt => opt.setName('reset').setDescription('Reset all permissions')),
         new SlashCommandBuilder().setName('perm_list').setDescription('List role permissions.'),
         new SlashCommandBuilder().setName('del').setDescription('Delete channel messages (admin only)'),
-        new SlashCommandBuilder().setName('ping').setDescription('Check bot and VPS ping')
+        new SlashCommandBuilder().setName('ping').setDescription('Check bot and VPS ping'),
+        new SlashCommandBuilder().setName('test').setDescription('Test command')
     ].map(cmd => cmd.setDMPermission(false).toJSON());
 
     await client.application.commands.set(commands, GUILD_ID);
@@ -104,7 +107,7 @@ client.once(Events.ClientReady, async () => {
                         const lastMsg = await channel.messages.fetch(lastMsgId);
                         await lastMsg.edit(msgPayload);
                         continue;
-                    } catch { }
+                    } catch {}
                 }
 
                 const sent = await channel.send(msgPayload);
@@ -119,121 +122,146 @@ client.once(Events.ClientReady, async () => {
 client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    const { commandName, options, guild } = interaction;
-    const member = await guild.members.fetch(interaction.user.id);
+    try {
+        const { commandName, options, guild } = interaction;
+        const member = await guild.members.fetch(interaction.user.id);
 
- if (await hasPermission(guild.id, commandName, member)) {
-    if (commandName === 'ping') {
-        const vpsPingResult = await ping.promise.probe(VPS_IP);
-        const botPing = Date.now() - interaction.createdTimestamp;
-        const apiPing = client.ws.ping;
-        const vpsPing = vpsPingResult.time !== 'unknown' ? `${vpsPingResult.time} ms` : 'Unreachable';
+        if (!await hasPermission(guild.id, commandName, member)) {
+            return interaction.reply({ content: '⛔ No permission for this command.', ephemeral: true });
+        }
 
-        const embed = new EmbedBuilder()
-            .setTitle('🏓 Pong!')
-            .addFields(
-                { name: '🤖 Bot Latency', value: `${botPing} ms`, inline: true },
-                { name: '📡 API Latency', value: `${apiPing} ms`, inline: true },
-                { name: '🖥️ VPS Ping', value: `${vpsPing}`, inline: true }
-            )
-            .setColor(0x00FF00)
-            .setTimestamp();
+        if (commandName === 'ping') {
+            const vpsPingResult = await ping.promise.probe(VPS_IP);
+            const botPing = Date.now() - interaction.createdTimestamp;
+            const apiPing = client.ws.ping;
+            const vpsPing = vpsPingResult.time !== 'unknown' ? `${vpsPingResult.time} ms` : 'Unreachable';
 
-        await interaction.reply({ embeds: [embed] });
-    }
+            const embed = new EmbedBuilder()
+                .setTitle('🏓 Pong!')
+                .addFields(
+                    { name: '🤖 Bot Latency', value: `${botPing} ms`, inline: true },
+                    { name: '📡 API Latency', value: `${apiPing} ms`, inline: true },
+                    { name: '🖥️ VPS Ping', value: `${vpsPing}`, inline: true }
+                )
+                .setColor(0x00FF00)
+                .setTimestamp();
 
-    else if (commandName === 'setup') {
-        const channel = await guild.channels.create({
-            name: 'server-status',
-            type: ChannelType.GuildText,
-            reason: 'Minecraft Server Status Channel'
-        });
-        setupChannels.set(guild.id, channel.id);
-        monitoringStatus.set(guild.id, true);
-        await interaction.reply({ content: `✅ Status channel created: ${channel}`, ephemeral: true });
-    }
+            await interaction.reply({ embeds: [embed] });
+        }
 
-    else if (commandName === 'start') {
-        if (!setupChannels.has(guild.id)) {
-            await interaction.reply({ content: '⚠️ Please run `/setup` first.', ephemeral: true });
-        } else {
+        else if (commandName === 'test') {
+            await interaction.reply({ content: '✅ Test command is working!' });
+        }
+
+        else if (commandName === 'setup') {
+            const channel = await guild.channels.create({
+                name: 'server-status',
+                type: ChannelType.GuildText,
+                reason: 'Minecraft Server Status Channel'
+            });
+            setupChannels.set(guild.id, channel.id);
             monitoringStatus.set(guild.id, true);
-            await interaction.reply({ content: '✅ Monitoring started.', ephemeral: true });
+            await interaction.reply({ content: `✅ Status channel created: ${channel}`, ephemeral: true });
         }
-    }
 
-    else if (commandName === 'stop') {
-        if (!setupChannels.has(guild.id)) {
-            await interaction.reply({ content: '⚠️ Please run `/setup` first.', ephemeral: true });
-        } else {
-            monitoringStatus.set(guild.id, false);
-            await interaction.reply({ content: '⏸️ Monitoring stopped.', ephemeral: true });
+        else if (commandName === 'start') {
+            if (!setupChannels.has(guild.id)) {
+                await interaction.reply({ content: '⚠️ Please run `/setup` first.', ephemeral: true });
+            } else {
+                monitoringStatus.set(guild.id, true);
+                await interaction.reply({ content: '✅ Monitoring started.', ephemeral: true });
+            }
         }
-    }
 
-    else if (commandName === 'msg') {
-        const type = options.getString('type');
-        const time = options.getString('time');
-        const embed = new EmbedBuilder()
-            .setColor(type === 'maintenance' ? 0xFFA500 : 0xFF0000)
-            .setTitle(type === 'maintenance' ? '🚧 Maintenance Notice' : '🛑 Server Stopped')
-            .setDescription(type === 'maintenance' ? `Server is under maintenance.\nEstimated time: **${time}**.` : `Server has been stopped.\nEstimated downtime: **${time}**.`)
-            .setFooter({ text: 'Server Status Notification' })
-            .setTimestamp();
+        else if (commandName === 'stop') {
+            if (!setupChannels.has(guild.id)) {
+                await interaction.reply({ content: '⚠️ Please run `/setup` first.', ephemeral: true });
+            } else {
+                monitoringStatus.set(guild.id, false);
+                await interaction.reply({ content: '⏸️ Monitoring stopped.', ephemeral: true });
+            }
+        }
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setLabel('Join Discord')
-                .setStyle(ButtonStyle.Link)
-                .setURL(DISCORD_INVITE)
-                .setEmoji('🔗')
-        );
+        else if (commandName === 'msg') {
+            const type = options.getString('type');
+            const time = options.getString('time');
 
-        await interaction.reply({ embeds: [embed], components: [row] });
-    }
+            const embed = new EmbedBuilder()
+                .setColor(type === 'maintenance' ? 0xffa500 : 0xff0000)
+                .setTitle(type === 'maintenance' ? '🚧 Scheduled Maintenance' : '🛑 Server Downtime Notice')
+                .setDescription(type === 'maintenance'
+                    ? `🛠️ **The server is currently undergoing maintenance.**\n\nEstimated time to complete: **${time}**\nWe appreciate your patience and support.`
+                    : `❌ **The server has been stopped temporarily.**\n\nEstimated downtime: **${time}**\nWe'll notify everyone when it's back online.`)
+                .setThumbnail('https://i.imgur.com/zlQwjWe.png')
+                .setFooter({ text: 'Status Bot Notification • HeartlessMC' })
+                .setTimestamp();
 
-    else if (commandName === 'perm') {
-        const role = options.getRole('role');
-        const permission = options.getString('permission');
-        const toggle = options.getString('toggle');
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setLabel('Join Discord for Updates')
+                    .setStyle(ButtonStyle.Link)
+                    .setURL(DISCORD_INVITE)
+                    .setEmoji('🔗')
+            );
 
-        if (toggle === 'allow') {
-            db.run(`INSERT OR IGNORE INTO permissions(guildId, commandName, roleId) VALUES (?, ?, ?)`, [guild.id, permission, role.id], (err) => {
-                if (err) console.error(err);
+            await interaction.reply({ embeds: [embed], components: [row] });
+        }
+
+        else if (commandName === 'perm') {
+            const reset = options.getBoolean('reset');
+            if (reset) {
+                db.run(`DELETE FROM permissions WHERE guildId = ?`, [guild.id], async (err) => {
+                    if (err) return interaction.reply({ content: '❌ Failed to reset permissions.', ephemeral: true });
+                    return interaction.reply({ content: '♻️ All permissions have been reset.', ephemeral: true });
+                });
+                return;
+            }
+
+            const role = options.getRole('role');
+            const permission = options.getString('permission');
+            const toggle = options.getString('toggle');
+
+            if (!role || !permission || !toggle)
+                return interaction.reply({ content: '⚠️ Missing arguments. Use `reset: true` to reset all.', ephemeral: true });
+
+            if (toggle === 'allow') {
+                db.run(`INSERT OR IGNORE INTO permissions(guildId, commandName, roleId) VALUES (?, ?, ?)`, [guild.id, permission, role.id]);
+                await interaction.reply({ content: `✅ Allowed ${role} to use \`/${permission}\`.`, ephemeral: true });
+            } else {
+                db.run(`DELETE FROM permissions WHERE guildId = ? AND commandName = ? AND roleId = ?`, [guild.id, permission, role.id]);
+                await interaction.reply({ content: `⛔ Denied ${role} from using \`/${permission}\`.`, ephemeral: true });
+            }
+        }
+
+        else if (commandName === 'perm_list') {
+            db.all(`SELECT * FROM permissions WHERE guildId = ?`, [guild.id], async (err, rows) => {
+                if (err) return interaction.reply({ content: '❌ Database error.', ephemeral: true });
+                if (!rows.length) return interaction.reply({ content: 'ℹ️ No permissions set.', ephemeral: true });
+
+                const perms = rows.map(r => `• \`${r.commandName}\`: <@&${r.roleId}>`).join('\n');
+                await interaction.reply({ content: `📋 **Permissions:**\n${perms}`, ephemeral: true });
             });
-            await interaction.reply({ content: `✅ Allowed ${role} to use \`/${permission}\`.`, ephemeral: true });
+        }
+
+        else if (commandName === 'del') {
+            const channel = interaction.channel;
+            if (!channel.permissionsFor(guild.members.me).has(PermissionsBitField.Flags.ManageMessages)) {
+                return interaction.reply({ content: '❌ I need the Manage Messages permission.', ephemeral: true });
+            }
+            const messages = await channel.messages.fetch({ limit: 100 });
+            await channel.bulkDelete(messages);
+            await interaction.reply({ content: '🗑️ Deleted messages.', ephemeral: true });
+        }
+
+    } catch (err) {
+        console.error(err);
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ content: '❌ Something went wrong.', ephemeral: true });
         } else {
-            db.run(`DELETE FROM permissions WHERE guildId = ? AND commandName = ? AND roleId = ?`, [guild.id, permission, role.id], (err) => {
-                if (err) console.error(err);
-            });
-            await interaction.reply({ content: `⛔ Denied ${role} from using \`/${permission}\`.`, ephemeral: true });
+            await interaction.reply({ content: '❌ Something went wrong.', ephemeral: true });
         }
     }
-
-    else if (commandName === 'perm_list') {
-        db.all(`SELECT * FROM permissions WHERE guildId = ?`, [guild.id], async (err, rows) => {
-            if (err) return interaction.reply({ content: '❌ Database error.', ephemeral: true });
-
-            if (!rows.length) return interaction.reply({ content: 'ℹ️ No permissions set.', ephemeral: true });
-
-            const perms = rows.map(r => `• \`${r.commandName}\`: <@&${r.roleId}>`).join('\n');
-            await interaction.reply({ content: `📋 **Permissions:**\n${perms}`, ephemeral: true });
-        });
-    }
-
-    else if (commandName === 'del') {
-        const channel = interaction.channel;
-        const messages = await channel.messages.fetch({ limit: 100 });
-        await channel.bulkDelete(messages);
-        await interaction.reply({ content: '🗑️ Deleted messages.', ephemeral: true });
-    }
-
-} else {
-    return interaction.reply({ content: '⛔ No permission for this command.', ephemeral: true });
-}
-
-    }
-);
+});
 
 function hasPermission(guildId, commandName, member) {
     return new Promise((resolve, reject) => {
