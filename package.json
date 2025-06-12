@@ -15,7 +15,6 @@
     "dotenv": "^16.5.0",
     "minecraft-server-util": "^5.4.4",
     "node-fetch": "^3.3.2",
-    "sqlite3": "^5.1.7",
     "ping": "^0.4.4",
     "required": "^1.0.0"
 

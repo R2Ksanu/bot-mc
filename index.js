@@ -25,11 +25,22 @@ const db = new sqlite3.Database('./permissions.db', (err) => {
     else console.log('✅ Connected to SQLite database.');
 });
 
+// Create permissions table
 db.run(`CREATE TABLE IF NOT EXISTS permissions (
     guildId TEXT,
     commandName TEXT,
     roleId TEXT,
     PRIMARY KEY (guildId, commandName, roleId)
+)`);
+
+// Create warnings table
+db.run(`CREATE TABLE IF NOT EXISTS warnings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guildId TEXT,
+    userId TEXT,
+    reason TEXT,
+    moderatorId TEXT,
+    timestamp INTEGER
 )`);
 
 const client = new Client({
@@ -57,10 +68,15 @@ client.once(Events.ClientReady, async () => {
             .addRoleOption(opt => opt.setName('role').setDescription('Role'))
             .addStringOption(opt => opt.setName('permission').setDescription('Command')
                 .addChoices(
-                    { name: 'setup', value: 'setup' }, { name: 'stop', value: 'stop' },
-                    { name: 'start', value: 'start' }, { name: 'msg', value: 'msg' },
-                    { name: 'del', value: 'del' }, { name: 'perm', value: 'perm' },
-                    { name: 'perm_list', value: 'perm_list' }, { name: 'ping', value: 'ping' }
+                    { name: 'setup', value: 'setup' },
+                    { name: 'stop', value: 'stop' },
+                    { name: 'start', value: 'start' },
+                    { name: 'msg', value: 'msg' },
+                    { name: 'del', value: 'del' },
+                    { name: 'perm', value: 'perm' },
+                    { name: 'perm_list', value: 'perm_list' },
+                    { name: 'ping', value: 'ping' },
+                    { name: 'warn', value: 'warn' }
                 ))
             .addStringOption(opt => opt.setName('toggle').setDescription('Allow or deny')
                 .addChoices({ name: 'allow', value: 'allow' }, { name: 'deny', value: 'deny' }))
@@ -68,7 +84,12 @@ client.once(Events.ClientReady, async () => {
         new SlashCommandBuilder().setName('perm_list').setDescription('List role permissions.'),
         new SlashCommandBuilder().setName('del').setDescription('Delete channel messages (admin only)'),
         new SlashCommandBuilder().setName('ping').setDescription('Check bot and VPS ping'),
-        new SlashCommandBuilder().setName('test').setDescription('Test command')
+        new SlashCommandBuilder().setName('test').setDescription('Test command'),
+        new SlashCommandBuilder()
+            .setName('warn')
+            .setDescription('Warn a user with a reason')
+            .addUserOption(opt => opt.setName('user').setDescription('User to warn').setRequired(true))
+            .addStringOption(opt => opt.setName('reason').setDescription('Reason for the warning').setRequired(true))
     ].map(cmd => cmd.setDMPermission(false).toJSON());
 
     await client.application.commands.set(commands, GUILD_ID);
@@ -187,7 +208,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const time = options.getString('time');
 
             const embed = new EmbedBuilder()
-                .setColor(type === 'maintenance' ? 0xffa500 : 0xff0000)
+                .setColor(type === 'maintenance' ? 0xFFA500 : 0xFF0000)
                 .setTitle(type === 'maintenance' ? '🚧 Scheduled Maintenance' : '🛑 Server Downtime Notice')
                 .setDescription(type === 'maintenance'
                     ? `🛠️ **The server is currently undergoing maintenance.**\n\nEstimated time to complete: **${time}**\nWe appreciate your patience and support.`
@@ -253,6 +274,68 @@ client.on(Events.InteractionCreate, async interaction => {
             await interaction.reply({ content: '🗑️ Deleted messages.', ephemeral: true });
         }
 
+        else if (commandName === 'warn') {
+            const user = options.getUser('user');
+            const reason = options.getString('reason');
+            const timestamp = Math.floor(Date.now() / 1000); // Unix timestamp in seconds
+
+            // Prevent warning the bot itself or the command issuer
+            if (user.id === client.user.id) {
+                return interaction.reply({ content: '❌ I cannot warn myself!', ephemeral: true });
+            }
+            if (user.id === interaction.user.id) {
+                return interaction.reply({ content: '❌ You cannot warn yourself!', ephemeral: true });
+            }
+
+            // Store the warning in the database
+            db.run(
+                `INSERT INTO warnings (guildId, userId, reason, moderatorId, timestamp) VALUES (?, ?, ?, ?, ?)`,
+                [guild.id, user.id, reason, interaction.user.id, timestamp],
+                async (err) => {
+                    if (err) {
+                        console.error('Database error:', err);
+                        return interaction.reply({ content: '❌ Failed to save warning.', ephemeral: true });
+                    }
+
+                    // Create the warning embed
+                    const embed = new EmbedBuilder()
+                        .setTitle('⚠️ User Warned')
+                        .setDescription(`**User:** ${user}\n**Reason:** ${reason}\n**Moderator:** ${interaction.user}`)
+                        .setColor(0xFFA500)
+                        .setTimestamp();
+
+                    // Send warning notification to the user (if possible)
+                    try {
+                        await user.send({
+                            embeds: [
+                                new EmbedBuilder()
+                                    .setTitle('⚠️ You Have Been Warned')
+                                    .setDescription(`**Server:** ${guild.name}\n**Reason:** ${reason}\nPlease follow the server rules to avoid further actions.`)
+                                    .setColor(0xFFA500)
+                                    .setTimestamp()
+                            ]
+                        });
+                    } catch (err) {
+                        console.log(`Could not DM ${user.tag}: ${err.message}`);
+                    }
+
+                    // Reply to the command issuer
+                    await interaction.reply({ embeds: [embed], ephemeral: true });
+
+                    // Optionally, send the warning to the status channel if set up
+                    const statusChannelId = setupChannels.get(guild.id);
+                    if (statusChannelId) {
+                        try {
+                            const channel = await client.channels.fetch(statusChannelId);
+                            await channel.send({ embeds: [embed] });
+                        } catch (err) {
+                            console.error(`Failed to send warning to status channel: ${err.message}`);
+                        }
+                    }
+                }
+            );
+        }
+
     } catch (err) {
         console.error(err);
         if (interaction.replied || interaction.deferred) {
@@ -285,7 +368,7 @@ function formatStatusMessage(status, ip) {
             { name: '📜 MOTD', value: String(status.motd || 'N/A').slice(0, 1024) },
             { name: '🔗 Protocol', value: String(status.protocol || 'Unknown') }
         )
-        .setColor(0x00ff00)
+        .setColor(0x00FF00)
         .setFooter({ text: 'Last Updated' })
         .setTimestamp();
 
